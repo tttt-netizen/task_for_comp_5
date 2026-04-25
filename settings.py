@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     redis_read_block_ms: int = 5000
     redis_dead_letter_stream: str = "leads_dead_letter"
 
-    jwt_secret: str = "super-secret-change-me"
+    jwt_secret: str = "ALLALALAAAAAAAAAAAAAAAALALALALLALALALLALSECCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC"
     jwt_algorithm: str = "HS256"
     jwt_expires_minutes: int = 120
     token_issuer_secret: str = "issue-token-secret"
