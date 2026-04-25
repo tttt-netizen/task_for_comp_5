@@ -4,6 +4,7 @@ import random
 import subprocess
 import sys
 from datetime import date, timedelta
+from pathlib import Path
 
 import httpx
 from redis.asyncio import Redis
@@ -127,11 +128,12 @@ async def get_leads(
     date_from: str,
     date_to: str,
     group: str,
+    base_url: str,
 ) -> None:
     auth_token = _resolve_token(token, affiliate_id)
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.get(
-            "http://localhost:8001/leads",
+            f"{base_url}/leads",
             params={"date_from": date_from, "date_to": date_to, "group": group},
             headers={"Authorization": f"Bearer {auth_token}"},
         )
@@ -139,7 +141,9 @@ async def get_leads(
         print(response.text)
 
 
-async def loadtest(token: str | None, affiliate_id: int, count: int, concurrency: int) -> None:
+async def loadtest(
+    token: str | None, affiliate_id: int, count: int, concurrency: int, base_url: str
+) -> None:
     auth_token = _resolve_token(token, affiliate_id)
     countries = ["UA", "PL", "DE", "IT", "ES", "FR", "RO", "CZ"]
     offers = [1, 2]
@@ -155,11 +159,16 @@ async def loadtest(token: str | None, affiliate_id: int, count: int, concurrency
                 "offer_id": random.choice(offers),
                 "affiliate_id": affiliate_id,
             }
-            response = await client.post(
-                "http://localhost:8000/lead",
-                json=payload,
-                headers={"Authorization": f"Bearer {auth_token}"},
-            )
+            try:
+                response = await client.post(
+                    f"{base_url}/lead",
+                    json=payload,
+                    headers={"Authorization": f"Bearer {auth_token}"},
+                )
+            except httpx.ConnectError as exc:
+                raise RuntimeError(
+                    f"Bad URL: {base_url}"
+                ) from exc
             if response.status_code == 200 and response.json().get("status", "accepted") in stats:
                 stats[response.json().get("status", "accepted")] += 1
             else:
@@ -177,6 +186,12 @@ async def loadtest(token: str | None, affiliate_id: int, count: int, concurrency
 def _default_dates() -> tuple[str, str]:
     today = date.today()
     return (today - timedelta(days=7)).isoformat(), today.isoformat()
+
+
+def _default_urls() -> tuple[str, str]:
+    if Path("/.dockerenv").exists():
+        return "http://core:8001", "http://landings:8000"
+    return "http://localhost:8001", "http://localhost:8000"
 
 
 def main() -> None:
@@ -207,12 +222,15 @@ def main() -> None:
     leads_parser.add_argument("--date-from", default=from_default)
     leads_parser.add_argument("--date-to", default=to_default)
     leads_parser.add_argument("--group", choices=["date", "offer"], default="date")
+    core_base_url, landings_base_url = _default_urls()
+    leads_parser.add_argument("--base-url", default=core_base_url)
 
     load_parser = sub.add_parser("loadtest")
     load_parser.add_argument("--token")
     load_parser.add_argument("--affiliate-id", type=int, required=True)
     load_parser.add_argument("--count", type=int, default=10000)
     load_parser.add_argument("--concurrency", type=int, default=200)
+    load_parser.add_argument("--base-url", default=landings_base_url)
 
     args = parser.parse_args()
     if args.command == "init":
@@ -234,9 +252,18 @@ def main() -> None:
     elif args.command == "list-offers":
         show_offers()
     elif args.command == "leads":
-        asyncio.run(get_leads(args.token, args.affiliate_id, args.date_from, args.date_to, args.group))
+        asyncio.run(
+            get_leads(
+                args.token,
+                args.affiliate_id,
+                args.date_from,
+                args.date_to,
+                args.group,
+                args.base_url,
+            )
+        )
     elif args.command == "loadtest":
-        asyncio.run(loadtest(args.token, args.affiliate_id, args.count, args.concurrency))
+        asyncio.run(loadtest(args.token, args.affiliate_id, args.count, args.concurrency, args.base_url))
 
 
 if __name__ == "__main__":
