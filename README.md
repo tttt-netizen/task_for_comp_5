@@ -54,7 +54,10 @@ docker compose exec core python main.py leads --affiliate-id 300 --group date
 docker compose exec core python main.py leads --affiliate-id 300 --group offer
 
 # send 100000 random POST /lead requests
-docker compose exec core python main.py loadtest --affiliate-id 300 --count 100000 --concurrency 200
+docker compose exec core python main.py loadtest --affiliate-id 300 --count 100000 --concurrency 200 --progress-step 1000
+
+# send loadtest with ~20% intentional duplicates and progress each 1000 requests
+docker compose exec core python main.py loadtest --affiliate-id 300 --count 100000 --concurrency 200 --dup-percent 20 --progress-step 1000
 ```
 
 Manual token API:
@@ -78,7 +81,6 @@ curl -X POST "http://localhost:8000/lead" \
     "affiliate_id": 300
   }'
 ```
-
 ## OTHER
 - `init` service auto-runs migrations and seed.
 - JWT payload is `{"id": affiliate_id}`.

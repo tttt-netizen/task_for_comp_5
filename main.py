@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import logging
 import random
 import subprocess
 import sys
@@ -142,23 +143,42 @@ async def get_leads(
 
 
 async def loadtest(
-    token: str | None, affiliate_id: int, count: int, concurrency: int, base_url: str
+    token: str | None,
+    affiliate_id: int,
+    count: int,
+    concurrency: int,
+    base_url: str,
+    dup_percent: int,
+    progress_step: int,
 ) -> None:
     auth_token = _resolve_token(token, affiliate_id)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
     countries = ["UA", "PL", "DE", "IT", "ES", "FR", "RO", "CZ"]
     offers = [1, 2]
     semaphore = asyncio.Semaphore(concurrency)
     stats = {"accepted": 0, "duplicate": 0, "other": 0}
+    processed = 0
+    lock = asyncio.Lock()
+    generated_pool: list[dict] = []
+    pool_limit = 5000
 
     async def send_one(index: int, client: httpx.AsyncClient) -> None:
+        nonlocal processed
         async with semaphore:
-            payload = {
-                "name": f"Lead_{index}_{random.randint(1, 1000)}",
-                "phone": f"+3809{random.randint(10000000, 99999999)}",
-                "country": random.choice(countries),
-                "offer_id": random.choice(offers),
-                "affiliate_id": affiliate_id,
-            }
+            should_duplicate = generated_pool and random.randint(1, 100) <= dup_percent
+            if should_duplicate:
+                payload = random.choice(generated_pool).copy()
+            else:
+                payload = {
+                    "name": f"Lead_{index}_{random.randint(1, 1000)}",
+                    "phone": f"+3809{random.randint(10000000, 99999999)}",
+                    "country": random.choice(countries),
+                    "offer_id": random.choice(offers),
+                    "affiliate_id": affiliate_id,
+                }
+                if len(generated_pool) < pool_limit:
+                    generated_pool.append(payload.copy())
             try:
                 response = await client.post(
                     f"{base_url}/lead",
@@ -167,19 +187,28 @@ async def loadtest(
                 )
             except httpx.ConnectError as exc:
                 raise RuntimeError(
-                    f"Bad URL: {base_url}"
+                    f"Cannot connect to {base_url}. "
+                    "If running inside Docker use service URL (e.g. http://landings:8000)."
                 ) from exc
-            if response.status_code == 200 and response.json().get("status", "accepted") in stats:
-                stats[response.json().get("status", "accepted")] += 1
-            else:
-                stats["other"] += 1
+            async with lock:
+                if response.status_code == 200 and response.json().get("status", "accepted") in stats:
+                    stats[response.json().get("status", "accepted")] += 1
+                else:
+                    stats["other"] += 1
+                processed += 1
+                if progress_step > 0 and processed % progress_step == 0:
+                    print(
+                        f"progress {processed}/{count} | "
+                        f"accepted={stats['accepted']} duplicate={stats['duplicate']} other={stats['other']}"
+                    )
 
     async with httpx.AsyncClient(timeout=60) as client:
         await asyncio.gather(*(send_one(i, client) for i in range(count)))
 
+    dup_ratio = (stats["duplicate"] / count * 100) if count else 0.0
     print(
         f"Loadtest done: total={count}, accepted={stats['accepted']}, "
-        f"duplicate={stats['duplicate']}, other={stats['other']}"
+        f"duplicate={stats['duplicate']} ({dup_ratio:.2f}%), other={stats['other']}"
     )
 
 
@@ -231,6 +260,8 @@ def main() -> None:
     load_parser.add_argument("--count", type=int, default=10000)
     load_parser.add_argument("--concurrency", type=int, default=200)
     load_parser.add_argument("--base-url", default=landings_base_url)
+    load_parser.add_argument("--dup-percent", type=int, default=0)
+    load_parser.add_argument("--progress-step", type=int, default=1000)
 
     args = parser.parse_args()
     if args.command == "init":
@@ -263,8 +294,16 @@ def main() -> None:
             )
         )
     elif args.command == "loadtest":
-        asyncio.run(loadtest(args.token, args.affiliate_id, args.count, args.concurrency, args.base_url))
-
-
+        asyncio.run(
+            loadtest(
+                args.token,
+                args.affiliate_id,
+                args.count,
+                args.concurrency,
+                args.base_url,
+                args.dup_percent,
+                args.progress_step,
+            )
+        )
 if __name__ == "__main__":
     main()
