@@ -1,0 +1,7 @@
+/alembic/versions
+.env.example
+/__pycache__
+/core/__pycache__
+/landings/__pycache__
+/shared/__pycache__
+test_task.txt
