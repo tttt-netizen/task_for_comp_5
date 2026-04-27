@@ -6,6 +6,15 @@ Folders used by app code:
 - `shared`
 - `alembic`
 
+Stack used:
+- Python 3.11+
+- FastAPI
+- PostgreSQL
+- SQLAlchemy 2 
+- Alembic
+- Redis 
+- JWT (HS256)
+
 ## Start (Docker, main mode)
 ```bash
 docker compose up --build -d  
@@ -54,10 +63,10 @@ docker compose exec core python main.py leads --affiliate-id 300 --group date
 docker compose exec core python main.py leads --affiliate-id 300 --group offer
 
 # send 100000 random POST /lead requests
-docker compose exec core python main.py loadtest --affiliate-id 300 --count 100000 --concurrency 200 --progress-step 1000
+docker compose exec core python main.py loadtest --affiliate-id 300 --count 100 --concurrency 200 --progress-step 10
 
 # send loadtest with ~20% intentional duplicates and progress each 1000 requests
-docker compose exec core python main.py loadtest --affiliate-id 300 --count 100000 --concurrency 200 --dup-percent 20 --progress-step 1000
+docker compose exec core python main.py loadtest --affiliate-id 300 --count 100 --concurrency 200 --dup-percent 20 --progress-step 10
 ```
 
 Manual token API:

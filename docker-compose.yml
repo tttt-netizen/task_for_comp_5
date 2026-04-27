@@ -27,9 +27,13 @@ services:
 
   init:
     build: .
-    command: python main.py init
+    command: >
+      sh -c "python main.py check
+      && python -m alembic upgrade head
+      && python -c 'import asyncio; from shared.bootstrap import seed_reference_data; asyncio.run(seed_reference_data())'"
     env_file:
       - .env
+    restart: on-failure:3
     depends_on:
       postgres:
         condition: service_healthy
